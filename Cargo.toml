@@ -1,0 +1,17 @@
+[package]
+name = "avif-ub"
+version = "0.0.0"
+authors = ["astral4"]
+edition = "2021"
+description = "Reproduction of AVIF image encoder UB"
+readme = "README.md"
+repository = "https://github.com/astral4/avif-ub"
+license = "MIT OR Apache-2.0"
+
+[dependencies]
+ravif = "0.11.4"
+rgb = "0.8.37"
+
+[profile.release]
+panic = "abort"
+lto = true
