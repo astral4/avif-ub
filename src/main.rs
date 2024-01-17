@@ -24,19 +24,14 @@ fn main() {
 }
 
 fn get_encoder_config() -> EncoderConfig {
-    const WIDTH: usize = 36;
-    const HEIGHT: usize = 36;
-    const BIT_DEPTH: usize = 8;
-    const QUANTIZER: usize = 121; // default quality in `ravif` is 80, which becomes 121
-
     let speed_settings = get_speed_settings();
 
     EncoderConfig {
-        width: WIDTH,
-        height: HEIGHT,
+        width: 36,
+        height: 36,
         sample_aspect_ratio: Rational::new(1, 1),
         time_base: Rational::new(1, 1),
-        bit_depth: BIT_DEPTH,
+        bit_depth: 8,
         chroma_sampling: ChromaSampling::Cs444,
         chroma_sample_position: ChromaSamplePosition::Unknown,
         pixel_range: PixelRange::Full,
@@ -56,8 +51,8 @@ fn get_encoder_config() -> EncoderConfig {
         max_key_frame_interval: 0,
         reservoir_frame_delay: None,
         low_latency: false,
-        quantizer: QUANTIZER,
-        min_quantizer: u8::try_from(QUANTIZER).unwrap(),
+        quantizer: 121, // default quality in `ravif` is 80, which becomes 121
+        min_quantizer: 121,
         bitrate: 0,
         tune: Tune::Psychovisual,
         film_grain_params: None,
