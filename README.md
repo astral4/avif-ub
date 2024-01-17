@@ -1,6 +1,6 @@
 # avif-ub
 
-Reproduction of AVIF image encoder UB
+This repository contains a reproduction of UB in the `rav1e` crate. See https://github.com/image-rs/image/issues/2108 for more details.
 
 ## License
 
