@@ -2,16 +2,14 @@ use core::hint::black_box;
 use rav1e::{Config, Pixel};
 
 pub fn run() {
-    let x = black_box(true);
-
-    if x {
-        run_inner(0u8);
+    if black_box(true) {
+        run_inner::<u8>();
     } else {
-        run_inner(0u16);
+        run_inner::<u16>();
     }
 }
 
-fn run_inner<P: Pixel>(_: P) {
+fn run_inner<P: Pixel>() {
     rayon::join(
         || {},
         || {
