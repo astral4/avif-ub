@@ -5,9 +5,9 @@ pub fn run() {
     let x = black_box(true);
 
     if x {
-        run_inner(0u8)
+        run_inner(0u8);
     } else {
-        run_inner(0u16)
+        run_inner(0u16);
     }
 }
 

@@ -9,7 +9,7 @@ repository = "https://github.com/astral4/avif-ub"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-rav1e = { version = "0.7.1", default-features = false, features = ["threading"] }
+rav1e = { version = "0.7.1", default-features = false }
 rayon = "1.8.1"
 
 [profile.release]
