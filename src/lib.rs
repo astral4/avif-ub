@@ -1,7 +1,8 @@
-use imgref::Img;
+use imgref::ImgRef;
 use rav1e::prelude::*;
+use rgb::{RGB8, RGBA8};
 
-pub fn encode_rgba(buffer: Img<&[rgb::RGBA<u8>]>) {
+pub fn encode_rgba(buffer: ImgRef<RGBA8>) {
     let use_alpha = buffer.pixels().any(|px| px.a != 255);
 
     if use_alpha {
@@ -17,7 +18,7 @@ pub fn encode_rgba(buffer: Img<&[rgb::RGBA<u8>]>) {
     }
 }
 
-fn encode_raw_planes<P: rav1e::Pixel + Default>(
+fn encode_raw_planes<P: Pixel>(
     planes: impl IntoIterator<Item = [P; 3]> + Send,
     alpha: Option<impl IntoIterator<Item = P> + Send>,
 ) {
@@ -28,11 +29,11 @@ fn to_ten(x: u8) -> u16 {
     (u16::from(x) << 2) | (u16::from(x) >> 6)
 }
 
-fn rgb_to_10_bit_gbr(px: rgb::RGB<u8>) -> (u16, u16, u16) {
+fn rgb_to_10_bit_gbr(px: RGB8) -> (u16, u16, u16) {
     (to_ten(px.g), to_ten(px.b), to_ten(px.r))
 }
 
-fn encode_to_av1<P: rav1e::Pixel>() {
+fn encode_to_av1<P: Pixel>() {
     let mut ctx: Context<P> = Config::new()
         .with_encoder_config(get_encoder_config())
         .new_context()
