@@ -9,4 +9,13 @@ repository = "https://github.com/astral4/avif-ub"
 license = "MIT OR Apache-2.0"
 
 [dependencies]
-rav1e = { version = "0.7.1", default-features = false }
+avif-serialize = "0.8.1"
+rav1e = { version = "0.7.1", default-features = false, features = ["threading"] }
+rayon = "1.8.1"
+rgb = "0.8.37"
+imgref = "1.10.0"
+loop9 = "0.1.5"
+quick-error = "2.0.1"
+
+[profile.release]
+lto = true
