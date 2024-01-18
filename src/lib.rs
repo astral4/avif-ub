@@ -17,7 +17,6 @@ pub fn encode_rgba(buffer: Img<&[rgb::RGBA<u8>]>) {
     }
 }
 
-#[inline(never)]
 fn encode_raw_planes<P: rav1e::Pixel + Default>(
     planes: impl IntoIterator<Item = [P; 3]> + Send,
     alpha: Option<impl IntoIterator<Item = P> + Send>,
@@ -25,17 +24,14 @@ fn encode_raw_planes<P: rav1e::Pixel + Default>(
     rayon::join(|| {}, || alpha.map(|_| encode_to_av1::<P>()));
 }
 
-#[inline(always)]
 fn to_ten(x: u8) -> u16 {
     (u16::from(x) << 2) | (u16::from(x) >> 6)
 }
 
-#[inline(always)]
 fn rgb_to_10_bit_gbr(px: rgb::RGB<u8>) -> (u16, u16, u16) {
     (to_ten(px.g), to_ten(px.b), to_ten(px.r))
 }
 
-#[inline(never)]
 fn encode_to_av1<P: rav1e::Pixel>() {
     let mut ctx: Context<P> = Config::new()
         .with_encoder_config(get_encoder_config())
