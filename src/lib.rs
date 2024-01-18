@@ -22,7 +22,23 @@ fn encode_raw_planes<P: Pixel>(
     planes: impl IntoIterator<Item = [P; 3]> + Send,
     alpha: Option<impl IntoIterator<Item = P> + Send>,
 ) {
-    rayon::join(|| {}, || alpha.map(|_| encode_to_av1::<P>()));
+    rayon::join(
+        || {},
+        || {
+            alpha.map(|_| {
+                let mut ctx = Config::new()
+                    .with_encoder_config(get_encoder_config())
+                    .new_context::<P>()
+                    .unwrap();
+                let frame = ctx.new_frame();
+
+                ctx.send_frame(frame).unwrap();
+                ctx.flush();
+
+                drop(ctx.receive_packet().unwrap());
+            })
+        },
+    );
 }
 
 fn to_ten(x: u8) -> u16 {
@@ -31,19 +47,6 @@ fn to_ten(x: u8) -> u16 {
 
 fn rgb_to_10_bit_gbr(px: RGB8) -> (u16, u16, u16) {
     (to_ten(px.g), to_ten(px.b), to_ten(px.r))
-}
-
-fn encode_to_av1<P: Pixel>() {
-    let mut ctx: Context<P> = Config::new()
-        .with_encoder_config(get_encoder_config())
-        .new_context()
-        .unwrap();
-    let frame = ctx.new_frame();
-
-    ctx.send_frame(frame).unwrap();
-    ctx.flush();
-
-    drop(ctx.receive_packet().unwrap());
 }
 
 fn get_encoder_config() -> EncoderConfig {
