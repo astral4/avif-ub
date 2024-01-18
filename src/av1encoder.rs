@@ -16,17 +16,14 @@ pub struct EncodedImage {
 
 /// Encoder config builder
 #[derive(Debug, Clone)]
-pub struct Encoder {
-    /// rav1e preset 1 (slow) 10 (fast but crappy)
-    speed: u8,
-}
+pub struct Encoder;
 
 /// Builder methods
 impl Encoder {
     /// Start here
     #[must_use]
     pub fn new() -> Self {
-        Self { speed: 5 }
+        Self
     }
 }
 
@@ -84,41 +81,15 @@ impl Encoder {
         bit_depth: u8,
     ) -> Result<EncodedImage, Error> {
         let encode_color = move || {
-            encode_to_av1::<P>(
-                &Av1EncodeConfig {
-                    width,
-                    height,
-                    bit_depth: bit_depth.into(),
-                    quantizer: 121,
-                    speed: SpeedTweaks::from_my_preset(self.speed),
-                    threads: None,
-                    pixel_range: PixelRange::Full,
-                    chroma_sampling: ChromaSampling::Cs444,
-                    color_description: Some(ColorDescription {
-                        transfer_characteristics: TransferCharacteristics::SRGB,
-                        color_primaries: ColorPrimaries::BT709, // sRGB-compatible
-                        matrix_coefficients: MatrixCoefficients::Identity,
-                    }),
-                },
-                move |frame| init_frame_3(width, height, planes, frame),
-            )
+            encode_to_av1::<P>(PixelKind::Rgb, move |frame| {
+                init_frame_3(width, height, planes, frame)
+            })
         };
         let encode_alpha = move || {
             alpha.map(|alpha| {
-                encode_to_av1::<P>(
-                    &Av1EncodeConfig {
-                        width,
-                        height,
-                        bit_depth: bit_depth.into(),
-                        quantizer: 121,
-                        speed: SpeedTweaks::from_my_preset(self.speed),
-                        threads: None,
-                        pixel_range: PixelRange::Full,
-                        chroma_sampling: ChromaSampling::Cs400,
-                        color_description: None,
-                    },
-                    |frame| init_frame_1(width, height, alpha, frame),
-                )
+                encode_to_av1::<P>(PixelKind::Alpha, |frame| {
+                    init_frame_1(width, height, alpha, frame)
+                })
             })
         };
         let (color, alpha) = rayon::join(encode_color, encode_alpha);
@@ -158,218 +129,6 @@ fn rgb_to_10_bit_gbr(px: rgb::RGB<u8>) -> (u16, u16, u16) {
 #[inline(always)]
 fn rgb_to_8_bit_gbr(px: rgb::RGB<u8>) -> (u8, u8, u8) {
     (px.g, px.b, px.r)
-}
-
-#[derive(Debug, Copy, Clone)]
-struct SpeedTweaks {
-    pub speed_preset: u8,
-
-    pub fast_deblock: Option<bool>,
-    pub reduced_tx_set: Option<bool>,
-    pub tx_domain_distortion: Option<bool>,
-    pub tx_domain_rate: Option<bool>,
-    pub encode_bottomup: Option<bool>,
-    pub rdo_tx_decision: Option<bool>,
-    pub cdef: Option<bool>,
-    /// loop restoration filter
-    pub lrf: Option<bool>,
-    pub sgr_complexity_full: Option<bool>,
-    pub use_satd_subpel: Option<bool>,
-    pub inter_tx_split: Option<bool>,
-    pub fine_directional_intra: Option<bool>,
-    pub complex_prediction_modes: Option<bool>,
-    pub partition_range: Option<(u8, u8)>,
-    pub min_tile_size: u16,
-}
-
-impl SpeedTweaks {
-    pub fn from_my_preset(speed: u8) -> Self {
-        // let low_quality = quantizer < quality_to_quantizer(55.);
-        let low_quality = false;
-        // let high_quality = quantizer > quality_to_quantizer(80.);
-        let high_quality = false;
-        let max_block_size = if high_quality { 16 } else { 64 };
-
-        Self {
-            speed_preset: speed,
-
-            partition_range: Some(match speed {
-                0 => (4, 64.min(max_block_size)),
-                1 if low_quality => (4, 64.min(max_block_size)),
-                2 if low_quality => (4, 32.min(max_block_size)),
-                1..=4 => (4, 16),
-                5..=8 => (8, 16),
-                _ => (16, 16),
-            }),
-
-            complex_prediction_modes: Some(speed <= 1), // 2x-3x slower, 2% better
-            sgr_complexity_full: Some(speed <= 2), // 15% slower, barely improves anything -/+1%
-
-            encode_bottomup: Some(speed <= 2), // may be costly (+60%), may even backfire
-
-            // big blocks disabled at 3
-
-            // these two are together?
-            rdo_tx_decision: Some(speed <= 4 && !high_quality), // it tends to blur subtle textures
-            reduced_tx_set: Some(speed == 4 || speed >= 9), // It interacts with tx_domain_distortion too?
-
-            // 4px blocks disabled at 5
-            fine_directional_intra: Some(speed <= 6),
-            fast_deblock: Some(speed >= 7 && !high_quality), // mixed bag?
-
-            // 8px blocks disabled at 8
-            lrf: Some(low_quality && speed <= 8), // hardly any help for hi-q images. recovers some q at low quality
-            cdef: Some(low_quality && speed <= 9), // hardly any help for hi-q images. recovers some q at low quality
-
-            inter_tx_split: Some(speed >= 9), // mixed bag even when it works, and it backfires if not used together with reduced_tx_set
-            tx_domain_rate: Some(speed >= 10), // 20% faster, but also 10% larger files!
-
-            tx_domain_distortion: None, // very mixed bag, sometimes helps speed sometimes it doesn't
-            use_satd_subpel: Some(false), // doesn't make sense
-            min_tile_size: match speed {
-                0 => 4096,
-                1 => 2048,
-                2 => 1024,
-                3 => 512,
-                4 => 256,
-                _ => 128,
-            } * if high_quality { 2 } else { 1 },
-        }
-    }
-
-    pub(crate) fn speed_settings(&self) -> SpeedSettings {
-        let mut speed_settings = SpeedSettings::from_preset(self.speed_preset);
-
-        speed_settings.multiref = false;
-        speed_settings.rdo_lookahead_frames = 1;
-        speed_settings.scene_detection_mode = SceneDetectionSpeed::None;
-        speed_settings.motion.include_near_mvs = false;
-
-        if let Some(v) = self.fast_deblock {
-            speed_settings.fast_deblock = v;
-        }
-        if let Some(v) = self.reduced_tx_set {
-            speed_settings.transform.reduced_tx_set = v;
-        }
-        if let Some(v) = self.tx_domain_distortion {
-            speed_settings.transform.tx_domain_distortion = v;
-        }
-        if let Some(v) = self.tx_domain_rate {
-            speed_settings.transform.tx_domain_rate = v;
-        }
-        if let Some(v) = self.encode_bottomup {
-            speed_settings.partition.encode_bottomup = v;
-        }
-        if let Some(v) = self.rdo_tx_decision {
-            speed_settings.transform.rdo_tx_decision = v;
-        }
-        if let Some(v) = self.cdef {
-            speed_settings.cdef = v;
-        }
-        if let Some(v) = self.lrf {
-            speed_settings.lrf = v;
-        }
-        if let Some(v) = self.inter_tx_split {
-            speed_settings.transform.enable_inter_tx_split = v;
-        }
-        if let Some(v) = self.sgr_complexity_full {
-            speed_settings.sgr_complexity = if v {
-                SGRComplexityLevel::Full
-            } else {
-                SGRComplexityLevel::Reduced
-            }
-        };
-        if let Some(v) = self.use_satd_subpel {
-            speed_settings.motion.use_satd_subpel = v;
-        }
-        if let Some(v) = self.fine_directional_intra {
-            speed_settings.prediction.fine_directional_intra = v;
-        }
-        if let Some(v) = self.complex_prediction_modes {
-            speed_settings.prediction.prediction_modes = if v {
-                PredictionModesSetting::ComplexAll
-            } else {
-                PredictionModesSetting::Simple
-            }
-        };
-        if let Some((min, max)) = self.partition_range {
-            debug_assert!(min <= max);
-            fn sz(s: u8) -> BlockSize {
-                match s {
-                    4 => BlockSize::BLOCK_4X4,
-                    8 => BlockSize::BLOCK_8X8,
-                    16 => BlockSize::BLOCK_16X16,
-                    32 => BlockSize::BLOCK_32X32,
-                    64 => BlockSize::BLOCK_64X64,
-                    128 => BlockSize::BLOCK_128X128,
-                    _ => panic!("bad size {s}"),
-                }
-            }
-            speed_settings.partition.partition_range = PartitionRange::new(sz(min), sz(max));
-        }
-
-        speed_settings
-    }
-}
-
-struct Av1EncodeConfig {
-    pub width: usize,
-    pub height: usize,
-    pub bit_depth: usize,
-    pub quantizer: usize,
-    pub speed: SpeedTweaks,
-    /// 0 means num_cpus
-    pub threads: Option<usize>,
-    pub pixel_range: PixelRange,
-    pub chroma_sampling: ChromaSampling,
-    pub color_description: Option<ColorDescription>,
-}
-
-fn rav1e_config(p: &Av1EncodeConfig) -> Config {
-    // AV1 needs all the CPU power you can give it,
-    // except when it'd create inefficiently tiny tiles
-    let tiles = {
-        let threads = p.threads.unwrap_or_else(rayon::current_num_threads);
-        threads.min((p.width * p.height) / (p.speed.min_tile_size as usize).pow(2))
-    };
-    let speed_settings = p.speed.speed_settings();
-    let cfg = Config::new().with_encoder_config(EncoderConfig {
-        width: p.width,
-        height: p.height,
-        time_base: Rational::new(1, 1),
-        sample_aspect_ratio: Rational::new(1, 1),
-        bit_depth: p.bit_depth,
-        chroma_sampling: p.chroma_sampling,
-        chroma_sample_position: ChromaSamplePosition::Unknown,
-        pixel_range: p.pixel_range,
-        color_description: p.color_description,
-        mastering_display: None,
-        content_light: None,
-        enable_timing_info: false,
-        still_picture: true,
-        error_resilient: false,
-        switch_frame_interval: 0,
-        min_key_frame_interval: 0,
-        max_key_frame_interval: 0,
-        reservoir_frame_delay: None,
-        low_latency: false,
-        quantizer: p.quantizer,
-        min_quantizer: p.quantizer as _,
-        bitrate: 0,
-        tune: Tune::Psychovisual,
-        tile_cols: 0,
-        tile_rows: 0,
-        tiles,
-        film_grain_params: None,
-        level_idx: None,
-        speed_settings,
-    });
-
-    if let Some(threads) = p.threads {
-        cfg.with_threads(threads)
-    } else {
-        cfg
-    }
 }
 
 fn init_frame_3<P: rav1e::Pixel + Default>(
@@ -425,10 +184,12 @@ fn init_frame_1<P: rav1e::Pixel + Default>(
 
 #[inline(never)]
 fn encode_to_av1<P: rav1e::Pixel>(
-    p: &Av1EncodeConfig,
+    kind: PixelKind,
     init: impl FnOnce(&mut Frame<P>) -> Result<(), Error>,
 ) -> Result<Vec<u8>, Error> {
-    let mut ctx: Context<P> = rav1e_config(p).new_context()?;
+    let mut ctx: Context<P> = Config::new()
+        .with_encoder_config(get_encoder_config(kind))
+        .new_context()?;
     let mut frame = ctx.new_frame();
 
     init(&mut frame)?;
@@ -449,4 +210,110 @@ fn encode_to_av1<P: rav1e::Pixel>(
         }
     }
     Ok(out)
+}
+
+enum PixelKind {
+    Rgb,
+    Alpha,
+}
+
+fn get_encoder_config(kind: PixelKind) -> EncoderConfig {
+    const WIDTH: usize = 180;
+    const HEIGHT: usize = 180;
+
+    const BIT_DEPTH: usize = 8;
+
+    const QUANTIZER: usize = 121; // default quality in `ravif` is 80, which becomes 121
+
+    let tiles = {
+        let threads = rayon::current_num_threads();
+        threads.min((WIDTH * HEIGHT) / 128usize.pow(2))
+    };
+
+    let chroma_sampling = match kind {
+        PixelKind::Rgb => ChromaSampling::Cs444,
+        PixelKind::Alpha => ChromaSampling::Cs400,
+    };
+
+    let color_description = match kind {
+        PixelKind::Rgb => Some(ColorDescription {
+            color_primaries: ColorPrimaries::BT709,
+            transfer_characteristics: TransferCharacteristics::SRGB,
+            matrix_coefficients: MatrixCoefficients::Identity,
+        }),
+        PixelKind::Alpha => None,
+    };
+
+    let speed_settings = get_speed_settings();
+
+    EncoderConfig {
+        width: WIDTH,
+        height: HEIGHT,
+        sample_aspect_ratio: Rational::new(1, 1),
+        time_base: Rational::new(1, 1),
+        bit_depth: BIT_DEPTH,
+        chroma_sampling,
+        chroma_sample_position: ChromaSamplePosition::Unknown,
+        pixel_range: PixelRange::Full,
+        color_description,
+        mastering_display: None,
+        content_light: None,
+        enable_timing_info: false,
+        level_idx: None,
+        still_picture: true,
+        error_resilient: false,
+        switch_frame_interval: 0,
+        min_key_frame_interval: 0,
+        max_key_frame_interval: 0,
+        reservoir_frame_delay: None,
+        low_latency: false,
+        quantizer: QUANTIZER,
+        min_quantizer: u8::try_from(QUANTIZER).unwrap(),
+        bitrate: 0,
+        tune: Tune::Psychovisual,
+        film_grain_params: None,
+        tile_cols: 0,
+        tile_rows: 0,
+        tiles,
+        speed_settings,
+    }
+}
+
+fn get_speed_settings() -> SpeedSettings {
+    let mut settings = SpeedSettings::default();
+
+    // These are all of the speed settings.
+    // SpeedSettings cannot be created using struct literal syntax because it is marked as `non_exhaustive`.
+    settings.multiref = false;
+    settings.fast_deblock = false;
+    settings.rdo_lookahead_frames = 1;
+    settings.scene_detection_mode = SceneDetectionSpeed::None;
+    settings.cdef = false;
+    settings.lrf = false;
+    settings.lru_on_skip = false;
+    settings.sgr_complexity = SGRComplexityLevel::Reduced;
+    settings.segmentation = SegmentationLevel::Simple;
+    settings.partition = PartitionSpeedSettings {
+        encode_bottomup: false,
+        non_square_partition_max_threshold: BlockSize::BLOCK_8X8,
+        partition_range: PartitionRange::new(BlockSize::BLOCK_8X8, BlockSize::BLOCK_16X16),
+    };
+    settings.transform = TransformSpeedSettings {
+        reduced_tx_set: false,
+        tx_domain_distortion: true,
+        tx_domain_rate: false,
+        rdo_tx_decision: false,
+        enable_inter_tx_split: false,
+    };
+    settings.prediction = PredictionSpeedSettings {
+        prediction_modes: PredictionModesSetting::Simple,
+        fine_directional_intra: true,
+    };
+    settings.motion = MotionSpeedSettings {
+        use_satd_subpel: false,
+        include_near_mvs: false,
+        me_allow_full_search: true,
+    };
+
+    settings
 }
