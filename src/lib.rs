@@ -2,21 +2,19 @@ use imgref::ImgRef;
 use rav1e::prelude::*;
 use rgb::RGBA8;
 
-pub fn encode_rgba(buffer: ImgRef<RGBA8>) {
+pub fn encode(buffer: ImgRef<RGBA8>) {
     let use_alpha = buffer.pixels().any(|px| px.a != 255);
 
     if use_alpha {
-        let planes = buffer.pixels().map(|px| [px.g, px.b, px.r]);
-        encode_raw_planes(planes)
+        let data = buffer.pixels().map(|px| px.r);
+        encode_inner(data)
     } else {
-        let planes = buffer
-            .pixels()
-            .map(|px| [px.g as u16, px.b as u16, px.r as u16]);
-        encode_raw_planes(planes)
+        let data = buffer.pixels().map(|px| px.r as u16);
+        encode_inner(data)
     }
 }
 
-fn encode_raw_planes<P: Pixel>(_planes: impl IntoIterator<Item = [P; 3]>) {
+fn encode_inner<I: IntoIterator<Item = P>, P: Pixel>(_: I) {
     rayon::join(
         || {},
         || {
