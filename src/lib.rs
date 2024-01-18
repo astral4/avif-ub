@@ -1,17 +1,17 @@
 use core::hint::black_box;
 use rav1e::prelude::*;
 
-pub fn encode() {
+pub fn run() {
     let x = black_box(true);
 
     if x {
-        encode_inner(0u8)
+        run_inner(0u8)
     } else {
-        encode_inner(0u16)
+        run_inner(0u16)
     }
 }
 
-fn encode_inner<P: Pixel>(_: P) {
+fn run_inner<P: Pixel>(_: P) {
     rayon::join(
         || {},
         || {

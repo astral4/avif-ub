@@ -1,5 +1,5 @@
-use avif_ub::encode;
+use avif_ub::run;
 
 fn main() {
-    encode();
+    run();
 }
