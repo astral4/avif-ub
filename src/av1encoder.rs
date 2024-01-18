@@ -37,8 +37,6 @@ pub struct Encoder {
     alpha_quantizer: u8,
     /// rav1e preset 1 (slow) 10 (fast but crappy)
     speed: u8,
-    /// Which pixel format to use in AVIF file. RGB tends to give larger files.
-    color_space: ColorSpace,
     /// How many threads should be used (0 = match core count), None - use global rayon thread pool
     threads: Option<usize>,
 }
@@ -52,20 +50,8 @@ impl Encoder {
             quantizer: quality_to_quantizer(80.),
             alpha_quantizer: quality_to_quantizer(80.),
             speed: 5,
-            color_space: ColorSpace::YCbCr,
             threads: None,
         }
-    }
-
-    /// Changes how color channels are stored in the image. The default is YCbCr.
-    ///
-    /// Note that this is only internal detail for the AVIF file, and doesn't
-    /// change color space of inputs to encode functions.
-    #[inline(always)]
-    #[must_use]
-    pub fn with_internal_color_space(mut self, color_space: ColorSpace) -> Self {
-        self.color_space = color_space;
-        self
     }
 
     /// Configures `rayon` thread pool size.
@@ -114,16 +100,10 @@ impl Encoder {
 
         let width = buffer.width();
         let height = buffer.height();
-        let matrix_coefficients = match self.color_space {
-            ColorSpace::YCbCr => MatrixCoefficients::BT601,
-            ColorSpace::RGB => MatrixCoefficients::Identity,
-        };
+        let matrix_coefficients = MatrixCoefficients::Identity;
 
         let planes = buffer.pixels().map(|px| {
-            let (y, u, v) = match self.color_space {
-                ColorSpace::YCbCr => rgb_to_8_bit_ycbcr(px.rgb(), BT601),
-                ColorSpace::RGB => rgb_to_8_bit_gbr(px.rgb()),
-            };
+            let (y, u, v) = rgb_to_8_bit_gbr(px.rgb());
             [y, u, v]
         });
         let alpha = buffer.pixels().map(|px| px.a);
@@ -143,16 +123,10 @@ impl Encoder {
         height: usize,
         pixels: impl Iterator<Item = RGB8> + Send + Sync,
     ) -> Result<EncodedImage, Error> {
-        let matrix_coefficients = match self.color_space {
-            ColorSpace::YCbCr => MatrixCoefficients::BT601,
-            ColorSpace::RGB => MatrixCoefficients::Identity,
-        };
+        let matrix_coefficients = MatrixCoefficients::Identity;
 
         let planes = pixels.map(|px| {
-            let (y, u, v) = match self.color_space {
-                ColorSpace::YCbCr => rgb_to_10_bit_ycbcr(px, BT601),
-                ColorSpace::RGB => rgb_to_10_bit_gbr(px),
-            };
+            let (y, u, v) = rgb_to_10_bit_gbr(px);
             [y, u, v]
         });
         self.encode_raw_planes_10_bit(
@@ -334,34 +308,6 @@ fn rgb_to_10_bit_gbr(px: rgb::RGB<u8>) -> (u16, u16, u16) {
 #[inline(always)]
 fn rgb_to_8_bit_gbr(px: rgb::RGB<u8>) -> (u8, u8, u8) {
     (px.g, px.b, px.r)
-}
-
-// const REC709: [f32; 3] = [0.2126, 0.7152, 0.0722];
-const BT601: [f32; 3] = [0.2990, 0.5870, 0.1140];
-
-#[inline(always)]
-fn rgb_to_ycbcr(px: rgb::RGB<u8>, depth: u8, matrix: [f32; 3]) -> (f32, f32, f32) {
-    let max_value = ((1 << depth) - 1) as f32;
-    let scale = max_value / 255.;
-    let shift = (max_value * 0.5).round();
-    let y = scale * matrix[0] * f32::from(px.r)
-        + scale * matrix[1] * f32::from(px.g)
-        + scale * matrix[2] * f32::from(px.b);
-    let cb = (f32::from(px.b) * scale - y).mul_add(0.5 / (1. - matrix[2]), shift);
-    let cr = (f32::from(px.r) * scale - y).mul_add(0.5 / (1. - matrix[0]), shift);
-    (y.round(), cb.round(), cr.round())
-}
-
-#[inline(always)]
-fn rgb_to_10_bit_ycbcr(px: rgb::RGB<u8>, matrix: [f32; 3]) -> (u16, u16, u16) {
-    let (y, u, v) = rgb_to_ycbcr(px, 10, matrix);
-    (y as u16, u as u16, v as u16)
-}
-
-#[inline(always)]
-fn rgb_to_8_bit_ycbcr(px: rgb::RGB<u8>, matrix: [f32; 3]) -> (u8, u8, u8) {
-    let (y, u, v) = rgb_to_ycbcr(px, 8, matrix);
-    (y as u8, u as u8, v as u8)
 }
 
 fn quality_to_quantizer(quality: f32) -> u8 {
