@@ -8,10 +8,7 @@ pub fn encode_rgba(buffer: Img<&[rgb::RGBA<u8>]>) {
     let use_alpha = buffer.pixels().any(|px| px.a != 255);
 
     if use_alpha {
-        let planes = buffer.pixels().map(|px| {
-            let (y, u, v) = rgb_to_8_bit_gbr(px.rgb());
-            [y, u, v]
-        });
+        let planes = buffer.pixels().map(|px| [px.g, px.b, px.r]);
         let alpha = buffer.pixels().map(|px| px.a);
         encode_raw_planes(width, height, planes, Some(alpha))
     } else {
@@ -30,18 +27,8 @@ fn encode_raw_planes<P: rav1e::Pixel + Default>(
     planes: impl IntoIterator<Item = [P; 3]> + Send,
     alpha: Option<impl IntoIterator<Item = P> + Send>,
 ) {
-    let encode_color = move || {
-        encode_to_av1::<P>(PixelKind::Rgb, move |frame| {
-            init_frame_3(width, height, planes, frame)
-        })
-    };
-    let encode_alpha = move || {
-        alpha.map(|alpha| {
-            encode_to_av1::<P>(PixelKind::Alpha, |frame| {
-                init_frame_1(width, height, alpha, frame)
-            })
-        })
-    };
+    let encode_color = move || encode_to_av1::<P>(PixelKind::Rgb);
+    let encode_alpha = move || alpha.map(|_| encode_to_av1::<P>(PixelKind::Alpha));
     rayon::join(encode_color, encode_alpha);
 }
 
@@ -55,62 +42,8 @@ fn rgb_to_10_bit_gbr(px: rgb::RGB<u8>) -> (u16, u16, u16) {
     (to_ten(px.g), to_ten(px.b), to_ten(px.r))
 }
 
-#[inline(always)]
-fn rgb_to_8_bit_gbr(px: rgb::RGB<u8>) -> (u8, u8, u8) {
-    (px.g, px.b, px.r)
-}
-
-fn init_frame_3<P: rav1e::Pixel + Default>(
-    width: usize,
-    height: usize,
-    planes: impl IntoIterator<Item = [P; 3]> + Send,
-    frame: &mut Frame<P>,
-) {
-    let mut f = frame.planes.iter_mut();
-    let mut planes = planes.into_iter();
-
-    // it doesn't seem to be necessary to fill padding area
-    let mut y = f.next().unwrap().mut_slice(Default::default());
-    let mut u = f.next().unwrap().mut_slice(Default::default());
-    let mut v = f.next().unwrap().mut_slice(Default::default());
-
-    for ((y, u), v) in y
-        .rows_iter_mut()
-        .zip(u.rows_iter_mut())
-        .zip(v.rows_iter_mut())
-        .take(height)
-    {
-        let y = &mut y[..width];
-        let u = &mut u[..width];
-        let v = &mut v[..width];
-        for ((y, u), v) in y.iter_mut().zip(u).zip(v) {
-            let px = planes.next().unwrap();
-            *y = px[0];
-            *u = px[1];
-            *v = px[2];
-        }
-    }
-}
-
-fn init_frame_1<P: rav1e::Pixel + Default>(
-    width: usize,
-    height: usize,
-    planes: impl IntoIterator<Item = P> + Send,
-    frame: &mut Frame<P>,
-) {
-    let mut y = frame.planes[0].mut_slice(Default::default());
-    let mut planes = planes.into_iter();
-
-    for y in y.rows_iter_mut().take(height) {
-        let y = &mut y[..width];
-        for y in y.iter_mut() {
-            *y = planes.next().unwrap();
-        }
-    }
-}
-
 #[inline(never)]
-fn encode_to_av1<P: rav1e::Pixel>(kind: PixelKind, init: impl FnOnce(&mut Frame<P>)) {
+fn encode_to_av1<P: rav1e::Pixel>(kind: PixelKind) {
     let mut ctx: Context<P> = Config::new()
         .with_encoder_config(get_encoder_config(kind))
         .new_context()
