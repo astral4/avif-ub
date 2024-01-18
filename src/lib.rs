@@ -11,15 +11,12 @@
 mod av1encoder;
 
 mod error;
-pub use av1encoder::AlphaColorMode;
 pub use av1encoder::ColorSpace;
 pub use av1encoder::EncodedImage;
 pub use av1encoder::Encoder;
 pub use error::Error;
 #[doc(inline)]
 pub use rav1e::prelude::MatrixCoefficients;
-
-mod dirtyalpha;
 
 #[doc(no_inline)]
 pub use imgref::Img;

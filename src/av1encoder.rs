@@ -1,11 +1,7 @@
-#![allow(deprecated)]
-use crate::dirtyalpha::blurred_dirty_alpha;
 use crate::error::Error;
 use imgref::Img;
-use imgref::ImgVec;
 use rav1e::prelude::*;
 use rgb::RGB8;
-use rgb::RGBA8;
 
 /// For [`Encoder::with_internal_color_space`]
 #[derive(Debug, Copy, Clone)]
@@ -18,24 +14,6 @@ pub enum ColorSpace {
     /// Usually results in larger file sizes, and is less compatible than `YCbCr`.
     /// Use only if the content really makes use of RGB, e.g. anaglyph images or RGB subpixel anti-aliasing.
     RGB,
-}
-
-/// Handling of color channels in transparent images. For [`Encoder::with_alpha_color_mode`]
-#[derive(Debug, Copy, Clone, Eq, PartialEq)]
-pub enum AlphaColorMode {
-    /// Use unassociated alpha channel and leave color channels unchanged, even if there's redundant color data in transparent areas.
-    UnassociatedDirty,
-    /// Use unassociated alpha channel, but set color channels of transparent areas to a solid color to eliminate invisible data and improve compression.
-    UnassociatedClean,
-    /// Store color channels of transparent images in premultiplied form.
-    /// This requires support for premultiplied alpha in AVIF decoders.
-    ///
-    /// It may reduce file sizes due to clearing of fully-transparent pixels, but
-    /// may also increase file sizes due to creation of new edges in the color channels.
-    ///
-    /// Note that this is only internal detail for the AVIF file.
-    /// It does not change meaning of `RGBA` in this library — it's always unassociated.
-    Premultiplied,
 }
 
 /// The newly-created image file + extra info FYI
@@ -65,8 +43,6 @@ pub struct Encoder {
     color_space: ColorSpace,
     /// How many threads should be used (0 = match core count), None - use global rayon thread pool
     threads: Option<usize>,
-    /// [`AlphaColorMode`]
-    alpha_color_mode: AlphaColorMode,
     /// 8 or 10
     depth: Option<u8>,
 }
@@ -84,7 +60,6 @@ impl Encoder {
             premultiplied_alpha: false,
             color_space: ColorSpace::YCbCr,
             threads: None,
-            alpha_color_mode: AlphaColorMode::UnassociatedClean,
         }
     }
 
@@ -107,15 +82,6 @@ impl Encoder {
     pub fn with_num_threads(mut self, num_threads: Option<usize>) -> Self {
         assert!(num_threads.map_or(true, |n| n > 0));
         self.threads = num_threads;
-        self
-    }
-
-    /// Configure handling of color channels in transparent images
-    #[inline(always)]
-    #[must_use]
-    pub fn with_alpha_color_mode(mut self, mode: AlphaColorMode) -> Self {
-        self.alpha_color_mode = mode;
-        self.premultiplied_alpha = mode == AlphaColorMode::Premultiplied;
         self
     }
 }
@@ -142,9 +108,7 @@ impl Encoder {
     /// This function takes 8-bit inputs, but will generate an AVIF file using 10-bit depth.
     ///
     /// returns AVIF file with info about sizes about AV1 payload.
-    pub fn encode_rgba(&self, in_buffer: Img<&[rgb::RGBA<u8>]>) -> Result<EncodedImage, Error> {
-        let new_alpha = self.convert_alpha(in_buffer);
-        let buffer = new_alpha.as_ref().map(|b| b.as_ref()).unwrap_or(in_buffer);
+    pub fn encode_rgba(&self, buffer: Img<&[rgb::RGBA<u8>]>) -> Result<EncodedImage, Error> {
         let use_alpha = buffer.pixels().any(|px| px.a != 255);
         if !use_alpha {
             return self.encode_rgb_internal(
@@ -194,32 +158,6 @@ impl Encoder {
                 PixelRange::Full,
                 matrix_coefficients,
             )
-        }
-    }
-
-    fn convert_alpha(&self, in_buffer: Img<&[RGBA8]>) -> Option<ImgVec<RGBA8>> {
-        match self.alpha_color_mode {
-            AlphaColorMode::UnassociatedDirty => None,
-            AlphaColorMode::UnassociatedClean => blurred_dirty_alpha(in_buffer),
-            AlphaColorMode::Premultiplied => {
-                let prem = in_buffer
-                    .pixels()
-                    .filter(|px| px.a != 255)
-                    .map(|px| {
-                        if px.a == 0 {
-                            RGBA8::default()
-                        } else {
-                            RGBA8::new(
-                                (u16::from(px.r) * 255 / u16::from(px.a)) as u8,
-                                (u16::from(px.r) * 255 / u16::from(px.a)) as u8,
-                                (u16::from(px.r) * 255 / u16::from(px.a)) as u8,
-                                px.a,
-                            )
-                        }
-                    })
-                    .collect();
-                Some(ImgVec::new(prem, in_buffer.width(), in_buffer.height()))
-            }
         }
     }
 
@@ -406,9 +344,6 @@ impl Encoder {
                 )
             })
         };
-        #[cfg(all(target_arch = "wasm32", not(target_feature = "atomics")))]
-        let (color, alpha) = (encode_color(), encode_alpha());
-        #[cfg(not(all(target_arch = "wasm32", not(target_feature = "atomics"))))]
         let (color, alpha) = rayon::join(encode_color, encode_alpha);
         let (color, alpha) = (color?, alpha.transpose()?);
 
