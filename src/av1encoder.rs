@@ -2,28 +2,23 @@ use imgref::Img;
 use rav1e::prelude::*;
 
 pub fn encode_rgba(buffer: Img<&[rgb::RGBA<u8>]>) {
-    let width = buffer.width();
-    let height = buffer.height();
-
     let use_alpha = buffer.pixels().any(|px| px.a != 255);
 
     if use_alpha {
         let planes = buffer.pixels().map(|px| [px.g, px.b, px.r]);
         let alpha = buffer.pixels().map(|px| px.a);
-        encode_raw_planes(width, height, planes, Some(alpha))
+        encode_raw_planes(planes, Some(alpha))
     } else {
         let planes = buffer.pixels().map(|px| {
             let (y, u, v) = rgb_to_10_bit_gbr(px.rgb());
             [y, u, v]
         });
-        encode_raw_planes(width, height, planes, None::<[_; 0]>)
+        encode_raw_planes(planes, None::<[_; 0]>)
     }
 }
 
 #[inline(never)]
 fn encode_raw_planes<P: rav1e::Pixel + Default>(
-    width: usize,
-    height: usize,
     planes: impl IntoIterator<Item = [P; 3]> + Send,
     alpha: Option<impl IntoIterator<Item = P> + Send>,
 ) {
