@@ -7,36 +7,30 @@ pub fn encode_rgba(buffer: ImgRef<RGBA8>) {
 
     if use_alpha {
         let planes = buffer.pixels().map(|px| [px.g, px.b, px.r]);
-        let alpha = buffer.pixels().map(|px| px.a);
-        encode_raw_planes(planes, Some(alpha))
+        encode_raw_planes(planes)
     } else {
         let planes = buffer.pixels().map(|px| {
             let (y, u, v) = rgb_to_10_bit_gbr(px.rgb());
             [y, u, v]
         });
-        encode_raw_planes(planes, None::<[_; 0]>)
+        encode_raw_planes(planes)
     }
 }
 
-fn encode_raw_planes<P: Pixel>(
-    planes: impl IntoIterator<Item = [P; 3]> + Send,
-    alpha: Option<impl IntoIterator<Item = P> + Send>,
-) {
+fn encode_raw_planes<P: Pixel>(planes: impl IntoIterator<Item = [P; 3]> + Send) {
     rayon::join(
         || {},
         || {
-            alpha.map(|_| {
-                let mut ctx = Config::new()
-                    .with_encoder_config(get_encoder_config())
-                    .new_context::<P>()
-                    .unwrap();
-                let frame = ctx.new_frame();
+            let mut ctx = Config::new()
+                .with_encoder_config(get_encoder_config())
+                .new_context::<P>()
+                .unwrap();
+            let frame = ctx.new_frame();
 
-                ctx.send_frame(frame).unwrap();
-                ctx.flush();
+            ctx.send_frame(frame).unwrap();
+            ctx.flush();
 
-                drop(ctx.receive_packet().unwrap());
-            })
+            drop(ctx.receive_packet().unwrap());
         },
     );
 }
