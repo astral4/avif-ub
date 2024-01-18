@@ -137,27 +137,6 @@ impl Encoder {
         )
     }
 
-    /// Make a new AVIF image from RGB pixels
-    ///
-    /// Make the `Img` for the `buffer` like this:
-    ///
-    /// ```rust,ignore
-    /// Img::new(&pixels_rgb[..], width, height)
-    /// ```
-    ///
-    /// If you have pixels as `u8` slice, then first do:
-    ///
-    /// ```rust,ignore
-    /// use rgb::ComponentSlice;
-    /// let pixels_rgb = pixels_u8.as_rgb();
-    /// ```
-    ///
-    /// returns AVIF file, size of color metadata
-    #[inline]
-    pub fn encode_rgb(&self, buffer: Img<&[RGB8]>) -> Result<EncodedImage, Error> {
-        self.encode_rgb_internal(buffer.width(), buffer.height(), buffer.pixels())
-    }
-
     fn encode_rgb_internal(
         &self,
         width: usize,
