@@ -37,8 +37,6 @@ pub struct Encoder {
     alpha_quantizer: u8,
     /// rav1e preset 1 (slow) 10 (fast but crappy)
     speed: u8,
-    /// True if RGBA input has already been premultiplied. It inserts appropriate metadata.
-    premultiplied_alpha: bool,
     /// Which pixel format to use in AVIF file. RGB tends to give larger files.
     color_space: ColorSpace,
     /// How many threads should be used (0 = match core count), None - use global rayon thread pool
@@ -57,7 +55,6 @@ impl Encoder {
             alpha_quantizer: quality_to_quantizer(80.),
             speed: 5,
             depth: None,
-            premultiplied_alpha: false,
             color_space: ColorSpace::YCbCr,
             threads: None,
         }
@@ -364,7 +361,7 @@ impl Encoder {
                 }
                 _ => return Err(Error::Unsupported("matrix coefficients")),
             })
-            .premultiplied_alpha(self.premultiplied_alpha)
+            .premultiplied_alpha(false)
             .to_vec(
                 &color,
                 alpha.as_deref(),
