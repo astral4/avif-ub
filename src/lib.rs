@@ -22,9 +22,7 @@ fn encode_raw_planes<P: rav1e::Pixel + Default>(
     planes: impl IntoIterator<Item = [P; 3]> + Send,
     alpha: Option<impl IntoIterator<Item = P> + Send>,
 ) {
-    let encode_color = move || encode_to_av1::<P>(PixelKind::Rgb);
-    let encode_alpha = move || alpha.map(|_| encode_to_av1::<P>(PixelKind::Alpha));
-    rayon::join(encode_color, encode_alpha);
+    rayon::join(|| {}, || alpha.map(|_| encode_to_av1::<P>()));
 }
 
 #[inline(always)]
@@ -38,9 +36,9 @@ fn rgb_to_10_bit_gbr(px: rgb::RGB<u8>) -> (u16, u16, u16) {
 }
 
 #[inline(never)]
-fn encode_to_av1<P: rav1e::Pixel>(kind: PixelKind) {
+fn encode_to_av1<P: rav1e::Pixel>() {
     let mut ctx: Context<P> = Config::new()
-        .with_encoder_config(get_encoder_config(kind))
+        .with_encoder_config(get_encoder_config())
         .new_context()
         .unwrap();
     let frame = ctx.new_frame();
@@ -51,12 +49,7 @@ fn encode_to_av1<P: rav1e::Pixel>(kind: PixelKind) {
     drop(ctx.receive_packet().unwrap());
 }
 
-enum PixelKind {
-    Rgb,
-    Alpha,
-}
-
-fn get_encoder_config(kind: PixelKind) -> EncoderConfig {
+fn get_encoder_config() -> EncoderConfig {
     const WIDTH: usize = 180;
     const HEIGHT: usize = 180;
 
@@ -69,20 +62,6 @@ fn get_encoder_config(kind: PixelKind) -> EncoderConfig {
         threads.min((WIDTH * HEIGHT) / 128usize.pow(2))
     };
 
-    let chroma_sampling = match kind {
-        PixelKind::Rgb => ChromaSampling::Cs444,
-        PixelKind::Alpha => ChromaSampling::Cs400,
-    };
-
-    let color_description = match kind {
-        PixelKind::Rgb => Some(ColorDescription {
-            color_primaries: ColorPrimaries::BT709,
-            transfer_characteristics: TransferCharacteristics::SRGB,
-            matrix_coefficients: MatrixCoefficients::Identity,
-        }),
-        PixelKind::Alpha => None,
-    };
-
     let speed_settings = get_speed_settings();
 
     EncoderConfig {
@@ -91,10 +70,10 @@ fn get_encoder_config(kind: PixelKind) -> EncoderConfig {
         sample_aspect_ratio: Rational::new(1, 1),
         time_base: Rational::new(1, 1),
         bit_depth: BIT_DEPTH,
-        chroma_sampling,
+        chroma_sampling: ChromaSampling::Cs400,
         chroma_sample_position: ChromaSamplePosition::Unknown,
         pixel_range: PixelRange::Full,
-        color_description,
+        color_description: None,
         mastering_display: None,
         content_light: None,
         enable_timing_info: false,
