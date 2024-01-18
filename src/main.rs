@@ -8,5 +8,5 @@ fn main() {
 
     let input = Img::new(data.as_rgba(), length, length);
 
-    drop(encode_rgba(input));
+    encode_rgba(input);
 }

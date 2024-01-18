@@ -1,8 +1,7 @@
-use crate::error::Error;
 use imgref::Img;
 use rav1e::prelude::*;
 
-pub fn encode_rgba(buffer: Img<&[rgb::RGBA<u8>]>) -> Result<(), Error> {
+pub fn encode_rgba(buffer: Img<&[rgb::RGBA<u8>]>) {
     let width = buffer.width();
     let height = buffer.height();
 
@@ -30,7 +29,7 @@ fn encode_raw_planes<P: rav1e::Pixel + Default>(
     height: usize,
     planes: impl IntoIterator<Item = [P; 3]> + Send,
     alpha: Option<impl IntoIterator<Item = P> + Send>,
-) -> Result<(), Error> {
+) {
     let encode_color = move || {
         encode_to_av1::<P>(PixelKind::Rgb, move |frame| {
             init_frame_3(width, height, planes, frame)
@@ -43,11 +42,7 @@ fn encode_raw_planes<P: rav1e::Pixel + Default>(
             })
         })
     };
-    let (color, alpha) = rayon::join(encode_color, encode_alpha);
-    color?;
-    alpha.transpose()?;
-
-    Ok(())
+    rayon::join(encode_color, encode_alpha);
 }
 
 #[inline(always)]
@@ -70,7 +65,7 @@ fn init_frame_3<P: rav1e::Pixel + Default>(
     height: usize,
     planes: impl IntoIterator<Item = [P; 3]> + Send,
     frame: &mut Frame<P>,
-) -> Result<(), Error> {
+) {
     let mut f = frame.planes.iter_mut();
     let mut planes = planes.into_iter();
 
@@ -89,13 +84,12 @@ fn init_frame_3<P: rav1e::Pixel + Default>(
         let u = &mut u[..width];
         let v = &mut v[..width];
         for ((y, u), v) in y.iter_mut().zip(u).zip(v) {
-            let px = planes.next().ok_or(Error::TooFewPixels)?;
+            let px = planes.next().unwrap();
             *y = px[0];
             *u = px[1];
             *v = px[2];
         }
     }
-    Ok(())
 }
 
 fn init_frame_1<P: rav1e::Pixel + Default>(
@@ -103,35 +97,30 @@ fn init_frame_1<P: rav1e::Pixel + Default>(
     height: usize,
     planes: impl IntoIterator<Item = P> + Send,
     frame: &mut Frame<P>,
-) -> Result<(), Error> {
+) {
     let mut y = frame.planes[0].mut_slice(Default::default());
     let mut planes = planes.into_iter();
 
     for y in y.rows_iter_mut().take(height) {
         let y = &mut y[..width];
         for y in y.iter_mut() {
-            *y = planes.next().ok_or(Error::TooFewPixels)?;
+            *y = planes.next().unwrap();
         }
     }
-    Ok(())
 }
 
 #[inline(never)]
-fn encode_to_av1<P: rav1e::Pixel>(
-    kind: PixelKind,
-    init: impl FnOnce(&mut Frame<P>) -> Result<(), Error>,
-) -> Result<(), Error> {
+fn encode_to_av1<P: rav1e::Pixel>(kind: PixelKind, init: impl FnOnce(&mut Frame<P>)) {
     let mut ctx: Context<P> = Config::new()
         .with_encoder_config(get_encoder_config(kind))
-        .new_context()?;
+        .new_context()
+        .unwrap();
     let frame = ctx.new_frame();
 
-    ctx.send_frame(frame)?;
+    ctx.send_frame(frame).unwrap();
     ctx.flush();
 
-    drop(ctx.receive_packet()?);
-
-    Ok(())
+    drop(ctx.receive_packet().unwrap());
 }
 
 enum PixelKind {
