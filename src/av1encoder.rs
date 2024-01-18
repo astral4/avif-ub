@@ -18,10 +18,6 @@ pub struct EncodedImage {
 /// Encoder config builder
 #[derive(Debug, Clone)]
 pub struct Encoder {
-    /// 0-255 scale
-    quantizer: u8,
-    /// 0-255 scale
-    alpha_quantizer: u8,
     /// rav1e preset 1 (slow) 10 (fast but crappy)
     speed: u8,
     /// How many threads should be used (0 = match core count), None - use global rayon thread pool
@@ -34,8 +30,6 @@ impl Encoder {
     #[must_use]
     pub fn new() -> Self {
         Self {
-            quantizer: quality_to_quantizer(80.),
-            alpha_quantizer: quality_to_quantizer(80.),
             speed: 5,
             threads: None,
         }
@@ -215,8 +209,8 @@ impl Encoder {
                     width,
                     height,
                     bit_depth: bit_depth.into(),
-                    quantizer: self.quantizer.into(),
-                    speed: SpeedTweaks::from_my_preset(self.speed, self.quantizer),
+                    quantizer: 121,
+                    speed: SpeedTweaks::from_my_preset(self.speed),
                     threads,
                     pixel_range: color_pixel_range,
                     chroma_sampling: ChromaSampling::Cs444,
@@ -232,8 +226,8 @@ impl Encoder {
                         width,
                         height,
                         bit_depth: bit_depth.into(),
-                        quantizer: self.alpha_quantizer.into(),
-                        speed: SpeedTweaks::from_my_preset(self.speed, self.alpha_quantizer),
+                        quantizer: 121,
+                        speed: SpeedTweaks::from_my_preset(self.speed),
                         threads,
                         pixel_range: PixelRange::Full,
                         chroma_sampling: ChromaSampling::Cs400,
@@ -297,18 +291,6 @@ fn rgb_to_8_bit_gbr(px: rgb::RGB<u8>) -> (u8, u8, u8) {
     (px.g, px.b, px.r)
 }
 
-fn quality_to_quantizer(quality: f32) -> u8 {
-    let q = quality / 100.;
-    let x = if q >= 0.85 {
-        (1. - q) * 3.
-    } else if q > 0.25 {
-        1. - 0.125 - q * 0.5
-    } else {
-        1. - q
-    };
-    (x * 255.).round() as u8
-}
-
 #[derive(Debug, Copy, Clone)]
 struct SpeedTweaks {
     pub speed_preset: u8,
@@ -332,9 +314,11 @@ struct SpeedTweaks {
 }
 
 impl SpeedTweaks {
-    pub fn from_my_preset(speed: u8, quantizer: u8) -> Self {
-        let low_quality = quantizer < quality_to_quantizer(55.);
-        let high_quality = quantizer > quality_to_quantizer(80.);
+    pub fn from_my_preset(speed: u8) -> Self {
+        // let low_quality = quantizer < quality_to_quantizer(55.);
+        let low_quality = false;
+        // let high_quality = quantizer > quality_to_quantizer(80.);
+        let high_quality = false;
         let max_block_size = if high_quality { 16 } else { 64 };
 
         Self {
