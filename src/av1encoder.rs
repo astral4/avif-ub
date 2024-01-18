@@ -37,7 +37,7 @@ impl Encoder {
     /// This function takes 8-bit inputs, but will generate an AVIF file using 10-bit depth.
     ///
     /// returns AVIF file with info about sizes about AV1 payload.
-    pub fn encode_rgba(&self, buffer: Img<&[rgb::RGBA<u8>]>) -> Result<Vec<u8>, Error> {
+    pub fn encode_rgba(&self, buffer: Img<&[rgb::RGBA<u8>]>) -> Result<(), Error> {
         let width = buffer.width();
         let height = buffer.height();
 
@@ -49,13 +49,13 @@ impl Encoder {
                 [y, u, v]
             });
             let alpha = buffer.pixels().map(|px| px.a);
-            self.encode_raw_planes(width, height, planes, Some(alpha), 8)
+            self.encode_raw_planes(width, height, planes, Some(alpha))
         } else {
             let planes = buffer.pixels().map(|px| {
                 let (y, u, v) = rgb_to_10_bit_gbr(px.rgb());
                 [y, u, v]
             });
-            self.encode_raw_planes(width, height, planes, None::<[_; 0]>, 10)
+            self.encode_raw_planes(width, height, planes, None::<[_; 0]>)
         }
     }
 
@@ -66,8 +66,7 @@ impl Encoder {
         height: usize,
         planes: impl IntoIterator<Item = [P; 3]> + Send,
         alpha: Option<impl IntoIterator<Item = P> + Send>,
-        bit_depth: u8,
-    ) -> Result<Vec<u8>, Error> {
+    ) -> Result<(), Error> {
         let encode_color = move || {
             encode_to_av1::<P>(PixelKind::Rgb, move |frame| {
                 init_frame_3(width, height, planes, frame)
@@ -81,20 +80,10 @@ impl Encoder {
             })
         };
         let (color, alpha) = rayon::join(encode_color, encode_alpha);
-        let (color, alpha) = (color?, alpha.transpose()?);
+        color?;
+        alpha.transpose()?;
 
-        let avif_data = avif_serialize::Aviffy::new()
-            .matrix_coefficients(avif_serialize::constants::MatrixCoefficients::Rgb)
-            .premultiplied_alpha(false)
-            .to_vec(
-                &color,
-                alpha.as_deref(),
-                width as u32,
-                height as u32,
-                bit_depth,
-            );
-
-        Ok(avif_data)
+        Ok(())
     }
 }
 
@@ -168,30 +157,18 @@ fn init_frame_1<P: rav1e::Pixel + Default>(
 fn encode_to_av1<P: rav1e::Pixel>(
     kind: PixelKind,
     init: impl FnOnce(&mut Frame<P>) -> Result<(), Error>,
-) -> Result<Vec<u8>, Error> {
+) -> Result<(), Error> {
     let mut ctx: Context<P> = Config::new()
         .with_encoder_config(get_encoder_config(kind))
         .new_context()?;
-    let mut frame = ctx.new_frame();
+    let frame = ctx.new_frame();
 
-    init(&mut frame)?;
     ctx.send_frame(frame)?;
     ctx.flush();
 
-    let mut out = Vec::new();
-    loop {
-        match ctx.receive_packet() {
-            Ok(mut packet) => match packet.frame_type {
-                FrameType::KEY => {
-                    out.append(&mut packet.data);
-                }
-                _ => continue,
-            },
-            Err(EncoderStatus::Encoded) | Err(EncoderStatus::LimitReached) => break,
-            Err(err) => Err(err)?,
-        }
-    }
-    Ok(out)
+    drop(ctx.receive_packet()?);
+
+    Ok(())
 }
 
 enum PixelKind {
