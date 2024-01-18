@@ -87,7 +87,7 @@ impl Encoder {
             [y, u, v]
         });
         let alpha = buffer.pixels().map(|px| px.a);
-        self.encode_raw_planes_8_bit(width, height, planes, Some(alpha), PixelRange::Full)
+        self.encode_raw_planes_8_bit(width, height, planes, Some(alpha))
     }
 
     fn encode_rgb_internal(
@@ -100,7 +100,7 @@ impl Encoder {
             let (y, u, v) = rgb_to_10_bit_gbr(px);
             [y, u, v]
         });
-        self.encode_raw_planes_10_bit(width, height, planes, None::<[_; 0]>, PixelRange::Full)
+        self.encode_raw_planes_10_bit(width, height, planes, None::<[_; 0]>)
     }
 
     /// Encodes AVIF from 3 planar channels that are in the color space described by `matrix_coefficients`,
@@ -117,9 +117,8 @@ impl Encoder {
         height: usize,
         planes: impl IntoIterator<Item = [u8; 3]> + Send,
         alpha: Option<impl IntoIterator<Item = u8> + Send>,
-        color_pixel_range: PixelRange,
     ) -> Result<EncodedImage, Error> {
-        self.encode_raw_planes(width, height, planes, alpha, color_pixel_range, 8)
+        self.encode_raw_planes(width, height, planes, alpha, 8)
     }
 
     /// Encodes AVIF from 3 planar channels that are in the color space described by `matrix_coefficients`,
@@ -138,9 +137,8 @@ impl Encoder {
         height: usize,
         planes: impl IntoIterator<Item = [u16; 3]> + Send,
         alpha: Option<impl IntoIterator<Item = u16> + Send>,
-        color_pixel_range: PixelRange,
     ) -> Result<EncodedImage, Error> {
-        self.encode_raw_planes(width, height, planes, alpha, color_pixel_range, 10)
+        self.encode_raw_planes(width, height, planes, alpha, 10)
     }
 
     #[inline(never)]
@@ -150,8 +148,6 @@ impl Encoder {
         height: usize,
         planes: impl IntoIterator<Item = [P; 3]> + Send,
         alpha: Option<impl IntoIterator<Item = P> + Send>,
-        color_pixel_range: PixelRange,
-        // matrix_coefficients: MatrixCoefficients,
         bit_depth: u8,
     ) -> Result<EncodedImage, Error> {
         let color_description = Some(ColorDescription {
@@ -177,7 +173,7 @@ impl Encoder {
                     quantizer: 121,
                     speed: SpeedTweaks::from_my_preset(self.speed),
                     threads,
-                    pixel_range: color_pixel_range,
+                    pixel_range: PixelRange::Full,
                     chroma_sampling: ChromaSampling::Cs444,
                     color_description,
                 },
