@@ -41,8 +41,6 @@ pub struct Encoder {
     color_space: ColorSpace,
     /// How many threads should be used (0 = match core count), None - use global rayon thread pool
     threads: Option<usize>,
-    /// 8 or 10
-    depth: Option<u8>,
 }
 
 /// Builder methods
@@ -54,7 +52,6 @@ impl Encoder {
             quantizer: quality_to_quantizer(80.),
             alpha_quantizer: quality_to_quantizer(80.),
             speed: 5,
-            depth: None,
             color_space: ColorSpace::YCbCr,
             threads: None,
         }
@@ -121,41 +118,23 @@ impl Encoder {
             ColorSpace::YCbCr => MatrixCoefficients::BT601,
             ColorSpace::RGB => MatrixCoefficients::Identity,
         };
-        if self.depth == Some(10) {
-            let planes = buffer.pixels().map(|px| {
-                let (y, u, v) = match self.color_space {
-                    ColorSpace::YCbCr => rgb_to_10_bit_ycbcr(px.rgb(), BT601),
-                    ColorSpace::RGB => rgb_to_10_bit_gbr(px.rgb()),
-                };
-                [y, u, v]
-            });
-            let alpha = buffer.pixels().map(|px| to_ten(px.a));
-            self.encode_raw_planes_10_bit(
-                width,
-                height,
-                planes,
-                Some(alpha),
-                PixelRange::Full,
-                matrix_coefficients,
-            )
-        } else {
-            let planes = buffer.pixels().map(|px| {
-                let (y, u, v) = match self.color_space {
-                    ColorSpace::YCbCr => rgb_to_8_bit_ycbcr(px.rgb(), BT601),
-                    ColorSpace::RGB => rgb_to_8_bit_gbr(px.rgb()),
-                };
-                [y, u, v]
-            });
-            let alpha = buffer.pixels().map(|px| px.a);
-            self.encode_raw_planes_8_bit(
-                width,
-                height,
-                planes,
-                Some(alpha),
-                PixelRange::Full,
-                matrix_coefficients,
-            )
-        }
+
+        let planes = buffer.pixels().map(|px| {
+            let (y, u, v) = match self.color_space {
+                ColorSpace::YCbCr => rgb_to_8_bit_ycbcr(px.rgb(), BT601),
+                ColorSpace::RGB => rgb_to_8_bit_gbr(px.rgb()),
+            };
+            [y, u, v]
+        });
+        let alpha = buffer.pixels().map(|px| px.a);
+        self.encode_raw_planes_8_bit(
+            width,
+            height,
+            planes,
+            Some(alpha),
+            PixelRange::Full,
+            matrix_coefficients,
+        )
     }
 
     /// Make a new AVIF image from RGB pixels
@@ -189,39 +168,22 @@ impl Encoder {
             ColorSpace::YCbCr => MatrixCoefficients::BT601,
             ColorSpace::RGB => MatrixCoefficients::Identity,
         };
-        if self.depth == Some(8) {
-            let planes = pixels.map(|px| {
-                let (y, u, v) = match self.color_space {
-                    ColorSpace::YCbCr => rgb_to_8_bit_ycbcr(px, BT601),
-                    ColorSpace::RGB => rgb_to_8_bit_gbr(px),
-                };
-                [y, u, v]
-            });
-            self.encode_raw_planes_8_bit(
-                width,
-                height,
-                planes,
-                None::<[_; 0]>,
-                PixelRange::Full,
-                matrix_coefficients,
-            )
-        } else {
-            let planes = pixels.map(|px| {
-                let (y, u, v) = match self.color_space {
-                    ColorSpace::YCbCr => rgb_to_10_bit_ycbcr(px, BT601),
-                    ColorSpace::RGB => rgb_to_10_bit_gbr(px),
-                };
-                [y, u, v]
-            });
-            self.encode_raw_planes_10_bit(
-                width,
-                height,
-                planes,
-                None::<[_; 0]>,
-                PixelRange::Full,
-                matrix_coefficients,
-            )
-        }
+
+        let planes = pixels.map(|px| {
+            let (y, u, v) = match self.color_space {
+                ColorSpace::YCbCr => rgb_to_10_bit_ycbcr(px, BT601),
+                ColorSpace::RGB => rgb_to_10_bit_gbr(px),
+            };
+            [y, u, v]
+        });
+        self.encode_raw_planes_10_bit(
+            width,
+            height,
+            planes,
+            None::<[_; 0]>,
+            PixelRange::Full,
+            matrix_coefficients,
+        )
     }
 
     /// Encodes AVIF from 3 planar channels that are in the color space described by `matrix_coefficients`,
