@@ -81,21 +81,13 @@ impl Encoder {
 
         let width = buffer.width();
         let height = buffer.height();
-        let matrix_coefficients = MatrixCoefficients::Identity;
 
         let planes = buffer.pixels().map(|px| {
             let (y, u, v) = rgb_to_8_bit_gbr(px.rgb());
             [y, u, v]
         });
         let alpha = buffer.pixels().map(|px| px.a);
-        self.encode_raw_planes_8_bit(
-            width,
-            height,
-            planes,
-            Some(alpha),
-            PixelRange::Full,
-            matrix_coefficients,
-        )
+        self.encode_raw_planes_8_bit(width, height, planes, Some(alpha), PixelRange::Full)
     }
 
     fn encode_rgb_internal(
@@ -104,20 +96,11 @@ impl Encoder {
         height: usize,
         pixels: impl Iterator<Item = RGB8> + Send + Sync,
     ) -> Result<EncodedImage, Error> {
-        let matrix_coefficients = MatrixCoefficients::Identity;
-
         let planes = pixels.map(|px| {
             let (y, u, v) = rgb_to_10_bit_gbr(px);
             [y, u, v]
         });
-        self.encode_raw_planes_10_bit(
-            width,
-            height,
-            planes,
-            None::<[_; 0]>,
-            PixelRange::Full,
-            matrix_coefficients,
-        )
+        self.encode_raw_planes_10_bit(width, height, planes, None::<[_; 0]>, PixelRange::Full)
     }
 
     /// Encodes AVIF from 3 planar channels that are in the color space described by `matrix_coefficients`,
@@ -135,17 +118,8 @@ impl Encoder {
         planes: impl IntoIterator<Item = [u8; 3]> + Send,
         alpha: Option<impl IntoIterator<Item = u8> + Send>,
         color_pixel_range: PixelRange,
-        matrix_coefficients: MatrixCoefficients,
     ) -> Result<EncodedImage, Error> {
-        self.encode_raw_planes(
-            width,
-            height,
-            planes,
-            alpha,
-            color_pixel_range,
-            matrix_coefficients,
-            8,
-        )
+        self.encode_raw_planes(width, height, planes, alpha, color_pixel_range, 8)
     }
 
     /// Encodes AVIF from 3 planar channels that are in the color space described by `matrix_coefficients`,
@@ -165,17 +139,8 @@ impl Encoder {
         planes: impl IntoIterator<Item = [u16; 3]> + Send,
         alpha: Option<impl IntoIterator<Item = u16> + Send>,
         color_pixel_range: PixelRange,
-        matrix_coefficients: MatrixCoefficients,
     ) -> Result<EncodedImage, Error> {
-        self.encode_raw_planes(
-            width,
-            height,
-            planes,
-            alpha,
-            color_pixel_range,
-            matrix_coefficients,
-            10,
-        )
+        self.encode_raw_planes(width, height, planes, alpha, color_pixel_range, 10)
     }
 
     #[inline(never)]
@@ -186,13 +151,13 @@ impl Encoder {
         planes: impl IntoIterator<Item = [P; 3]> + Send,
         alpha: Option<impl IntoIterator<Item = P> + Send>,
         color_pixel_range: PixelRange,
-        matrix_coefficients: MatrixCoefficients,
+        // matrix_coefficients: MatrixCoefficients,
         bit_depth: u8,
     ) -> Result<EncodedImage, Error> {
         let color_description = Some(ColorDescription {
             transfer_characteristics: TransferCharacteristics::SRGB,
             color_primaries: ColorPrimaries::BT709, // sRGB-compatible
-            matrix_coefficients,
+            matrix_coefficients: MatrixCoefficients::Identity,
         });
 
         let threads = self.threads.map(|threads| {
@@ -241,22 +206,7 @@ impl Encoder {
         let (color, alpha) = (color?, alpha.transpose()?);
 
         let avif_file = avif_serialize::Aviffy::new()
-            .matrix_coefficients(match matrix_coefficients {
-                MatrixCoefficients::Identity => avif_serialize::constants::MatrixCoefficients::Rgb,
-                MatrixCoefficients::BT709 => avif_serialize::constants::MatrixCoefficients::Bt709,
-                MatrixCoefficients::Unspecified => {
-                    avif_serialize::constants::MatrixCoefficients::Unspecified
-                }
-                MatrixCoefficients::BT601 => avif_serialize::constants::MatrixCoefficients::Bt601,
-                MatrixCoefficients::YCgCo => avif_serialize::constants::MatrixCoefficients::Ycgco,
-                MatrixCoefficients::BT2020NCL => {
-                    avif_serialize::constants::MatrixCoefficients::Bt2020Ncl
-                }
-                MatrixCoefficients::BT2020CL => {
-                    avif_serialize::constants::MatrixCoefficients::Bt2020Cl
-                }
-                _ => return Err(Error::Unsupported("matrix coefficients")),
-            })
+            .matrix_coefficients(avif_serialize::constants::MatrixCoefficients::Rgb)
             .premultiplied_alpha(false)
             .to_vec(
                 &color,
