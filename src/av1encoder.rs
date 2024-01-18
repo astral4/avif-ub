@@ -2,89 +2,52 @@ use crate::error::Error;
 use imgref::Img;
 use rav1e::prelude::*;
 
-/// Encoder config builder
-#[derive(Debug, Clone)]
-pub struct Encoder;
+pub fn encode_rgba(buffer: Img<&[rgb::RGBA<u8>]>) -> Result<(), Error> {
+    let width = buffer.width();
+    let height = buffer.height();
 
-/// Builder methods
-impl Encoder {
-    /// Start here
-    #[must_use]
-    pub fn new() -> Self {
-        Self
+    let use_alpha = buffer.pixels().any(|px| px.a != 255);
+
+    if use_alpha {
+        let planes = buffer.pixels().map(|px| {
+            let (y, u, v) = rgb_to_8_bit_gbr(px.rgb());
+            [y, u, v]
+        });
+        let alpha = buffer.pixels().map(|px| px.a);
+        encode_raw_planes(width, height, planes, Some(alpha))
+    } else {
+        let planes = buffer.pixels().map(|px| {
+            let (y, u, v) = rgb_to_10_bit_gbr(px.rgb());
+            [y, u, v]
+        });
+        encode_raw_planes(width, height, planes, None::<[_; 0]>)
     }
 }
 
-/// Once done with config, call one of the `encode_*` functions
-impl Encoder {
-    /// Make a new AVIF image from RGBA pixels (non-premultiplied, alpha last)
-    ///
-    /// Make the `Img` for the `buffer` like this:
-    ///
-    /// ```rust,ignore
-    /// Img::new(&pixels_rgba[..], width, height)
-    /// ```
-    ///
-    /// If you have pixels as `u8` slice, then first do:
-    ///
-    /// ```rust,ignore
-    /// use rgb::ComponentSlice;
-    /// let pixels_rgba = pixels_u8.as_rgba();
-    /// ```
-    ///
-    /// If all pixels are opaque, the alpha channel will be left out automatically.
-    ///
-    /// This function takes 8-bit inputs, but will generate an AVIF file using 10-bit depth.
-    ///
-    /// returns AVIF file with info about sizes about AV1 payload.
-    pub fn encode_rgba(&self, buffer: Img<&[rgb::RGBA<u8>]>) -> Result<(), Error> {
-        let width = buffer.width();
-        let height = buffer.height();
-
-        let use_alpha = buffer.pixels().any(|px| px.a != 255);
-
-        if use_alpha {
-            let planes = buffer.pixels().map(|px| {
-                let (y, u, v) = rgb_to_8_bit_gbr(px.rgb());
-                [y, u, v]
-            });
-            let alpha = buffer.pixels().map(|px| px.a);
-            self.encode_raw_planes(width, height, planes, Some(alpha))
-        } else {
-            let planes = buffer.pixels().map(|px| {
-                let (y, u, v) = rgb_to_10_bit_gbr(px.rgb());
-                [y, u, v]
-            });
-            self.encode_raw_planes(width, height, planes, None::<[_; 0]>)
-        }
-    }
-
-    #[inline(never)]
-    fn encode_raw_planes<P: rav1e::Pixel + Default>(
-        &self,
-        width: usize,
-        height: usize,
-        planes: impl IntoIterator<Item = [P; 3]> + Send,
-        alpha: Option<impl IntoIterator<Item = P> + Send>,
-    ) -> Result<(), Error> {
-        let encode_color = move || {
-            encode_to_av1::<P>(PixelKind::Rgb, move |frame| {
-                init_frame_3(width, height, planes, frame)
+#[inline(never)]
+fn encode_raw_planes<P: rav1e::Pixel + Default>(
+    width: usize,
+    height: usize,
+    planes: impl IntoIterator<Item = [P; 3]> + Send,
+    alpha: Option<impl IntoIterator<Item = P> + Send>,
+) -> Result<(), Error> {
+    let encode_color = move || {
+        encode_to_av1::<P>(PixelKind::Rgb, move |frame| {
+            init_frame_3(width, height, planes, frame)
+        })
+    };
+    let encode_alpha = move || {
+        alpha.map(|alpha| {
+            encode_to_av1::<P>(PixelKind::Alpha, |frame| {
+                init_frame_1(width, height, alpha, frame)
             })
-        };
-        let encode_alpha = move || {
-            alpha.map(|alpha| {
-                encode_to_av1::<P>(PixelKind::Alpha, |frame| {
-                    init_frame_1(width, height, alpha, frame)
-                })
-            })
-        };
-        let (color, alpha) = rayon::join(encode_color, encode_alpha);
-        color?;
-        alpha.transpose()?;
+        })
+    };
+    let (color, alpha) = rayon::join(encode_color, encode_alpha);
+    color?;
+    alpha.transpose()?;
 
-        Ok(())
-    }
+    Ok(())
 }
 
 #[inline(always)]

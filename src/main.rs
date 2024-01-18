@@ -1,4 +1,4 @@
-use avif_ub::Encoder;
+use avif_ub::encode_rgba;
 use imgref::Img;
 use rgb::FromSlice;
 
@@ -8,5 +8,5 @@ fn main() {
 
     let input = Img::new(data.as_rgba(), length, length);
 
-    drop(Encoder::new().encode_rgba(input));
+    drop(encode_rgba(input));
 }
