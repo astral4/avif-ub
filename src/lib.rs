@@ -17,7 +17,7 @@ pub fn encode_rgba(buffer: ImgRef<RGBA8>) {
     }
 }
 
-fn encode_raw_planes<P: Pixel>(planes: impl IntoIterator<Item = [P; 3]> + Send) {
+fn encode_raw_planes<P: Pixel>(_planes: impl IntoIterator<Item = [P; 3]>) {
     rayon::join(
         || {},
         || {
