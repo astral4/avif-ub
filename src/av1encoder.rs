@@ -19,8 +19,6 @@ pub struct EncodedImage {
 pub struct Encoder {
     /// rav1e preset 1 (slow) 10 (fast but crappy)
     speed: u8,
-    /// How many threads should be used (0 = match core count), None - use global rayon thread pool
-    threads: Option<usize>,
 }
 
 /// Builder methods
@@ -28,21 +26,7 @@ impl Encoder {
     /// Start here
     #[must_use]
     pub fn new() -> Self {
-        Self {
-            speed: 5,
-            threads: None,
-        }
-    }
-
-    /// Configures `rayon` thread pool size.
-    /// The default `None` is to use all threads in the default `rayon` thread pool.
-    #[inline(always)]
-    #[track_caller]
-    #[must_use]
-    pub fn with_num_threads(mut self, num_threads: Option<usize>) -> Self {
-        assert!(num_threads.map_or(true, |n| n > 0));
-        self.threads = num_threads;
-        self
+        Self { speed: 5 }
     }
 }
 
@@ -99,14 +83,6 @@ impl Encoder {
         alpha: Option<impl IntoIterator<Item = P> + Send>,
         bit_depth: u8,
     ) -> Result<EncodedImage, Error> {
-        let threads = self.threads.map(|threads| {
-            if threads > 0 {
-                threads
-            } else {
-                rayon::current_num_threads()
-            }
-        });
-
         let encode_color = move || {
             encode_to_av1::<P>(
                 &Av1EncodeConfig {
@@ -115,7 +91,7 @@ impl Encoder {
                     bit_depth: bit_depth.into(),
                     quantizer: 121,
                     speed: SpeedTweaks::from_my_preset(self.speed),
-                    threads,
+                    threads: None,
                     pixel_range: PixelRange::Full,
                     chroma_sampling: ChromaSampling::Cs444,
                     color_description: Some(ColorDescription {
@@ -136,7 +112,7 @@ impl Encoder {
                         bit_depth: bit_depth.into(),
                         quantizer: 121,
                         speed: SpeedTweaks::from_my_preset(self.speed),
-                        threads,
+                        threads: None,
                         pixel_range: PixelRange::Full,
                         chroma_sampling: ChromaSampling::Cs400,
                         color_description: None,
