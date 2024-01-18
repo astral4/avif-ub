@@ -1,7 +1,6 @@
 use crate::error::Error;
 use imgref::Img;
 use rav1e::prelude::*;
-use rgb::RGB8;
 
 /// The newly-created image file + extra info FYI
 #[non_exhaustive]
@@ -70,75 +69,25 @@ impl Encoder {
     ///
     /// returns AVIF file with info about sizes about AV1 payload.
     pub fn encode_rgba(&self, buffer: Img<&[rgb::RGBA<u8>]>) -> Result<EncodedImage, Error> {
-        let use_alpha = buffer.pixels().any(|px| px.a != 255);
-        if !use_alpha {
-            return self.encode_rgb_internal(
-                buffer.width(),
-                buffer.height(),
-                buffer.pixels().map(|px| px.rgb()),
-            );
-        }
-
         let width = buffer.width();
         let height = buffer.height();
 
-        let planes = buffer.pixels().map(|px| {
-            let (y, u, v) = rgb_to_8_bit_gbr(px.rgb());
-            [y, u, v]
-        });
-        let alpha = buffer.pixels().map(|px| px.a);
-        self.encode_raw_planes_8_bit(width, height, planes, Some(alpha))
-    }
+        let use_alpha = buffer.pixels().any(|px| px.a != 255);
 
-    fn encode_rgb_internal(
-        &self,
-        width: usize,
-        height: usize,
-        pixels: impl Iterator<Item = RGB8> + Send + Sync,
-    ) -> Result<EncodedImage, Error> {
-        let planes = pixels.map(|px| {
-            let (y, u, v) = rgb_to_10_bit_gbr(px);
-            [y, u, v]
-        });
-        self.encode_raw_planes_10_bit(width, height, planes, None::<[_; 0]>)
-    }
-
-    /// Encodes AVIF from 3 planar channels that are in the color space described by `matrix_coefficients`,
-    /// with sRGB transfer characteristics and color primaries.
-    ///
-    /// Alpha always uses full range. Chroma subsampling is not supported, and it's a bad idea for AVIF anyway.
-    /// If there's no alpha, use `None::<[_; 0]>`.
-    ///
-    /// returns AVIF file, size of color metadata, size of alpha metadata overhead
-    #[inline]
-    pub fn encode_raw_planes_8_bit(
-        &self,
-        width: usize,
-        height: usize,
-        planes: impl IntoIterator<Item = [u8; 3]> + Send,
-        alpha: Option<impl IntoIterator<Item = u8> + Send>,
-    ) -> Result<EncodedImage, Error> {
-        self.encode_raw_planes(width, height, planes, alpha, 8)
-    }
-
-    /// Encodes AVIF from 3 planar channels that are in the color space described by `matrix_coefficients`,
-    /// with sRGB transfer characteristics and color primaries.
-    ///
-    /// The pixels are 10-bit (values `0.=1023`).
-    ///
-    /// Alpha always uses full range. Chroma subsampling is not supported, and it's a bad idea for AVIF anyway.
-    /// If there's no alpha, use `None::<[_; 0]>`.
-    ///
-    /// returns AVIF file, size of color metadata, size of alpha metadata overhead
-    #[inline]
-    pub fn encode_raw_planes_10_bit(
-        &self,
-        width: usize,
-        height: usize,
-        planes: impl IntoIterator<Item = [u16; 3]> + Send,
-        alpha: Option<impl IntoIterator<Item = u16> + Send>,
-    ) -> Result<EncodedImage, Error> {
-        self.encode_raw_planes(width, height, planes, alpha, 10)
+        if use_alpha {
+            let planes = buffer.pixels().map(|px| {
+                let (y, u, v) = rgb_to_8_bit_gbr(px.rgb());
+                [y, u, v]
+            });
+            let alpha = buffer.pixels().map(|px| px.a);
+            self.encode_raw_planes(width, height, planes, Some(alpha), 8)
+        } else {
+            let planes = buffer.pixels().map(|px| {
+                let (y, u, v) = rgb_to_10_bit_gbr(px.rgb());
+                [y, u, v]
+            });
+            self.encode_raw_planes(width, height, planes, None::<[_; 0]>, 10)
+        }
     }
 
     #[inline(never)]
@@ -150,12 +99,6 @@ impl Encoder {
         alpha: Option<impl IntoIterator<Item = P> + Send>,
         bit_depth: u8,
     ) -> Result<EncodedImage, Error> {
-        let color_description = Some(ColorDescription {
-            transfer_characteristics: TransferCharacteristics::SRGB,
-            color_primaries: ColorPrimaries::BT709, // sRGB-compatible
-            matrix_coefficients: MatrixCoefficients::Identity,
-        });
-
         let threads = self.threads.map(|threads| {
             if threads > 0 {
                 threads
@@ -175,7 +118,11 @@ impl Encoder {
                     threads,
                     pixel_range: PixelRange::Full,
                     chroma_sampling: ChromaSampling::Cs444,
-                    color_description,
+                    color_description: Some(ColorDescription {
+                        transfer_characteristics: TransferCharacteristics::SRGB,
+                        color_primaries: ColorPrimaries::BT709, // sRGB-compatible
+                        matrix_coefficients: MatrixCoefficients::Identity,
+                    }),
                 },
                 move |frame| init_frame_3(width, height, planes, frame),
             )
