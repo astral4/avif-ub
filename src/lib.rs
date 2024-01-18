@@ -14,11 +14,9 @@ fn run_inner<P: Pixel>() {
         || {},
         || {
             let mut ctx = Config::new().new_context::<P>().unwrap();
-            let frame = ctx.new_frame();
-
-            ctx.send_frame(frame).unwrap();
+            ctx.send_frame(ctx.new_frame()).unwrap();
             ctx.flush();
-
+            // segfault occcurs in rav1e::Context::receive_packet()
             drop(ctx.receive_packet().unwrap());
         },
     );
