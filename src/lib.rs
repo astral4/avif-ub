@@ -1,20 +1,17 @@
-use imgref::ImgRef;
+use core::hint::black_box;
 use rav1e::prelude::*;
-use rgb::RGBA8;
 
-pub fn encode(buffer: ImgRef<RGBA8>) {
-    let use_alpha = buffer.pixels().any(|px| px.a != 255);
+pub fn encode() {
+    let x = black_box(true);
 
-    if use_alpha {
-        let data = buffer.pixels().map(|px| px.r);
-        encode_inner(data)
+    if x {
+        encode_inner(0u8)
     } else {
-        let data = buffer.pixels().map(|px| px.r as u16);
-        encode_inner(data)
+        encode_inner(0u16)
     }
 }
 
-fn encode_inner<I: IntoIterator<Item = P>, P: Pixel>(_: I) {
+fn encode_inner<P: Pixel>(_: P) {
     rayon::join(
         || {},
         || {

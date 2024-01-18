@@ -11,8 +11,6 @@ license = "MIT OR Apache-2.0"
 [dependencies]
 rav1e = { version = "0.7.1", default-features = false, features = ["threading"] }
 rayon = "1.8.1"
-rgb = "0.8.37"
-imgref = "1.10.0"
 
 [profile.release]
 lto = true
