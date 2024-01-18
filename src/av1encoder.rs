@@ -3,19 +3,6 @@ use imgref::Img;
 use rav1e::prelude::*;
 use rgb::RGB8;
 
-/// For [`Encoder::with_internal_color_space`]
-#[derive(Debug, Copy, Clone)]
-pub enum ColorSpace {
-    /// Standard color space for photographic content. Usually the best choice.
-    /// This library always uses full-resolution color (4:4:4).
-    /// This library will automatically choose between BT.601 or BT.709.
-    YCbCr,
-    /// RGB channels are encoded without colorspace transformation.
-    /// Usually results in larger file sizes, and is less compatible than `YCbCr`.
-    /// Use only if the content really makes use of RGB, e.g. anaglyph images or RGB subpixel anti-aliasing.
-    RGB,
-}
-
 /// The newly-created image file + extra info FYI
 #[non_exhaustive]
 #[derive(Clone)]
