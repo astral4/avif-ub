@@ -2,18 +2,6 @@ use crate::error::Error;
 use imgref::Img;
 use rav1e::prelude::*;
 
-/// The newly-created image file + extra info FYI
-#[non_exhaustive]
-#[derive(Clone)]
-pub struct EncodedImage {
-    /// AVIF (HEIF+AV1) encoded image data
-    pub avif_file: Vec<u8>,
-    /// FYI: number of bytes of AV1 payload used for the color
-    pub color_byte_size: usize,
-    /// FYI: number of bytes of AV1 payload used for the alpha channel
-    pub alpha_byte_size: usize,
-}
-
 /// Encoder config builder
 #[derive(Debug, Clone)]
 pub struct Encoder;
@@ -49,7 +37,7 @@ impl Encoder {
     /// This function takes 8-bit inputs, but will generate an AVIF file using 10-bit depth.
     ///
     /// returns AVIF file with info about sizes about AV1 payload.
-    pub fn encode_rgba(&self, buffer: Img<&[rgb::RGBA<u8>]>) -> Result<EncodedImage, Error> {
+    pub fn encode_rgba(&self, buffer: Img<&[rgb::RGBA<u8>]>) -> Result<Vec<u8>, Error> {
         let width = buffer.width();
         let height = buffer.height();
 
@@ -79,7 +67,7 @@ impl Encoder {
         planes: impl IntoIterator<Item = [P; 3]> + Send,
         alpha: Option<impl IntoIterator<Item = P> + Send>,
         bit_depth: u8,
-    ) -> Result<EncodedImage, Error> {
+    ) -> Result<Vec<u8>, Error> {
         let encode_color = move || {
             encode_to_av1::<P>(PixelKind::Rgb, move |frame| {
                 init_frame_3(width, height, planes, frame)
@@ -95,7 +83,7 @@ impl Encoder {
         let (color, alpha) = rayon::join(encode_color, encode_alpha);
         let (color, alpha) = (color?, alpha.transpose()?);
 
-        let avif_file = avif_serialize::Aviffy::new()
+        let avif_data = avif_serialize::Aviffy::new()
             .matrix_coefficients(avif_serialize::constants::MatrixCoefficients::Rgb)
             .premultiplied_alpha(false)
             .to_vec(
@@ -105,14 +93,8 @@ impl Encoder {
                 height as u32,
                 bit_depth,
             );
-        let color_byte_size = color.len();
-        let alpha_byte_size = alpha.as_ref().map_or(0, |a| a.len());
 
-        Ok(EncodedImage {
-            avif_file,
-            color_byte_size,
-            alpha_byte_size,
-        })
+        Ok(avif_data)
     }
 }
 
